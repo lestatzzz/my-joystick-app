@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>双轴摇杆控制器</title>
+    <style>
+        .joystick-container {
+            display: flex;
+            gap: 20px;
+            margin: 20px;
+        }
+        canvas {
+            border: 1px solid #ccc;
+            touch-action: none;
+        }
+    </style>
+  </head>
+  <body>
+    <div class="joystick-container">
+      <canvas id="joystickX" width="200" height="200"></canvas>
+      <canvas id="joystickY" width="200" height="200"></canvas>
+    </div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+        // 摇杆类封装
+        class Joystick {
+            constructor(canvasId, lockAxis) {
+                this.canvas = document.getElementById(canvasId);
+                this.ctx = this.canvas.getContext('2d');
+                this.lockAxis = lockAxis;
+                
+                // 摇杆参数
+                this.center = { 
+                    x: this.canvas.width/2, 
+                    y: this.canvas.height/2 
+                };
+                this.baseRadius = 60;
+                this.stickRadius = 30;
+                this.baseImage = new Image();
+                this.stickImage = new Image();
+                
+                // 加载图片
+                this.baseImage.src = 'joystick-base.png';
+                this.stickImage.src = 'joystick-handle.png';
+                this.baseImage.onload = () => this.draw();
+                this.stickImage.onload = () => this.draw();
+
+                this.currentPos = { ...this.center };
+                this.isDragging = false;
+                this.touchId = null;
+
+                this.init();
+            }
+
+            init() {
+                this.draw();
+                this.bindEvents();
+            }
+
+            bindEvents() {
+                this.canvas.addEventListener('mousedown', (e) => this.handleStart(e));
+                this.canvas.addEventListener('mousemove', (e) => this.handleMove(e));
+                this.canvas.addEventListener('mouseup', () => this.handleEnd());
+                this.canvas.addEventListener('touchstart', (e) => this.handleStart(e));
+                this.canvas.addEventListener('touchmove', (e) => this.handleMove(e));
+                this.canvas.addEventListener('touchend', () => this.handleEnd());
+            }
+
+            handleStart(e) {
+                if (e.touches) {
+                    // 遍历所有触摸点
+                    for (let touch of e.touches) {
+                        const pos = this.getMousePos(touch);
+                        const dist = this.distance(pos, this.currentPos);
+                        
+                        // 找到第一个落在摇杆区域且未被占用的触摸点
+                        if (dist < this.stickRadius && !this.touchId) {
+                            this.touchId = touch.identifier;
+                            this.isDragging = true;
+                            break;
+                        }
+                    }
+                    return;
+                }
+                
+                // 鼠标处理
+                const pos = this.getMousePos(e);
+                const dist = this.distance(pos, this.currentPos);
+                if (dist < this.stickRadius) {
+                    this.isDragging = true;
+                }
+            }
+
+            handleMove(e) {
+                if (!this.isDragging) return;
+                e.preventDefault();
+                
+                let touch;
+                if (e.touches) {
+                    touch = Array.from(e.touches).find(t => t.identifier === this.touchId);
+                    if (!touch) return;
+                }
+                
+                const pos = this.getMousePos(touch || e);
+                
+                const delta = {
+                    x: pos.x - this.center.x,
+                    y: pos.y - this.center.y
+                };
+                
+                const dist = Math.min(this.distance(pos, this.center), this.baseRadius);
+                
+                // 根据锁定轴计算位置
+                switch(this.lockAxis) {
+                    case 'x':
+                        this.currentPos = {
+                            x: this.center.x + (delta.x > 0 ? dist : -dist),
+                            y: this.center.y
+                        };
+                        break;
+                    case 'y':
+                        this.currentPos = {
+                            x: this.center.x,
+                            y: this.center.y + (delta.y > 0 ? dist : -dist)
+                        };
+                        break;
+                    default:
+                        const angle = Math.atan2(delta.y, delta.x);
+                        this.currentPos = {
+                            x: this.center.x + Math.cos(angle) * dist,
+                            y: this.center.y + Math.sin(angle) * dist
+                        };
+                }
+                
+                this.draw();
+                this.updateOutput();
+            }
+
+            handleEnd() {
+                this.isDragging = false;
+                this.touchId = null;
+                this.currentPos = { ...this.center };
+                this.draw();
+                this.updateOutput();
+            }
+
+            draw() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // 绘制底座
+                if (this.baseImage.complete) {
+                    this.ctx.drawImage(
+                        this.baseImage,
+                        this.center.x - this.baseImage.width/2,
+                        this.center.y - this.baseImage.height/2
+                    );
+                }
+
+                // 绘制摇杆头
+                if (this.stickImage.complete) {
+                    this.ctx.drawImage(
+                        this.stickImage,
+                        this.currentPos.x - this.stickImage.width/2,
+                        this.currentPos.y - this.stickImage.height/2
+                    );
+                }
+            }
+
+            getMousePos(e) {
+                const rect = this.canvas.getBoundingClientRect();
+                return {
+                    x: e.clientX - rect.left,
+                    y: e.clientY - rect.top
+                };
+            }
+
+            distance(a, b) {
+                return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
+            }
+
+            updateOutput() {
+                const delta = {
+                    x: (this.currentPos.x - this.center.x) / this.baseRadius,
+                    y: (this.currentPos.y - this.center.y) / this.baseRadius
+                };
+                console.log(`${this.lockAxis}轴摇杆:`, delta);
+            }
+        }
+
+        // 创建两个摇杆实例
+        const joystickX = new Joystick('joystickX', 'x');
+        const joystickY = new Joystick('joystickY', 'y');
+    </script>
+  </body>
+</html>
