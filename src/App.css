@@ -40,3 +40,14 @@
 .read-the-docs {
   color: #888;
 }
+
+.joystick-container {
+  display: flex;
+  gap: 20px;
+  padding: 20px;
+}
+
+canvas {
+  border: 1px solid #ccc;
+  border-radius: 8px;
+}
